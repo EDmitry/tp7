@@ -29,7 +29,9 @@ Device identity:
 - Product: `TP-7`
 - Vendor string: `teenage engineering`
 - Vendor ID: `0x2367`
-- Product ID: `0x0019`
+- Product ID: `0x0019` on firmware `1.1.9`, where both personalities share it.
+  Firmware `2.5.7` enumerates the audio/MIDI personality as `0x8019` and keeps
+  `0x0019` for MTP mode, so device detection accepts both ids.
 - Serial: `F1RTL11C`
 - USB speed: high speed, 480 Mbps
 - USB version: 2.0
@@ -307,7 +309,13 @@ Useful flags:
 - `--recursive`
 - `--overwrite`
 - `--skip-existing`
+- `--max-size <size>`: skip remote files larger than the given size. Accepts
+  plain bytes or a case-insensitive `K`/`M`/`G` suffix in powers of 1024.
 - `--dry-run`
+
+Skipped files still appear in the report. Human output labels them
+`skipped (exists)` or `skipped (too large)`; `--json` uses the per-file
+`status` values `skipped-exists` and `skipped-too-large`.
 
 `tp7 push <local-path> <remote-path>`
 
@@ -466,7 +474,7 @@ Implement downloads first, then uploads.
 
 Deliverable:
 
-- `tp7 pull` (implemented for files and recursive folders, with `--dry-run`, `--overwrite`, and `--skip-existing`)
+- `tp7 pull` (implemented for files and recursive folders, with `--dry-run`, `--overwrite`, `--skip-existing`, and `--max-size`)
 - `tp7 push` (implemented for files and existing-folder recursive directory uploads, with `--dry-run`, staged `--overwrite`, and recursive preflight)
 - progress reporting
 - skip/overwrite behavior

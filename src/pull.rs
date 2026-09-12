@@ -18,6 +18,7 @@ pub struct PullReport {
     pub remote_path: String,
     pub local_path: String,
     pub dry_run: bool,
+    pub max_size: Option<u64>,
     pub downloaded: usize,
     pub skipped: usize,
     pub total_bytes: u64,
@@ -37,7 +38,10 @@ pub struct PullFileReport {
 pub enum PullStatus {
     Downloaded,
     DryRun,
-    Skipped,
+    /// The destination file already exists and `--skip-existing` was set.
+    SkippedExists,
+    /// The remote file is larger than `--max-size`.
+    SkippedTooLarge,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -45,6 +49,7 @@ pub struct PullOptions {
     pub recursive: bool,
     pub overwrite: bool,
     pub skip_existing: bool,
+    pub max_size: Option<u64>,
     pub dry_run: bool,
     pub progress: bool,
 }
@@ -88,6 +93,7 @@ async fn read_pull(
         remote_path: resolved.path.clone(),
         local_path: String::new(),
         dry_run: options.dry_run,
+        max_size: options.max_size,
         downloaded: 0,
         skipped: 0,
         total_bytes: 0,
@@ -190,16 +196,18 @@ async fn pull_file(
     options: PullOptions,
     report: &mut PullReport,
 ) -> Result<(), AppError> {
-    let status = prepare_file_destination(local_path, options)?;
+    let status = if exceeds_max_size(object.size, options.max_size) {
+        PullStatus::SkippedTooLarge
+    } else {
+        prepare_file_destination(local_path, options)?
+    };
+
     match status {
-        PullStatus::Skipped => {
+        status @ (PullStatus::SkippedExists | PullStatus::SkippedTooLarge) => {
             report.skipped += 1;
-            report.files.push(file_report(
-                remote_path,
-                local_path,
-                object.size,
-                PullStatus::Skipped,
-            ));
+            report
+                .files
+                .push(file_report(remote_path, local_path, object.size, status));
             Ok(())
         }
         PullStatus::DryRun => {
@@ -212,17 +220,9 @@ async fn pull_file(
             Ok(())
         }
         PullStatus::Downloaded => {
-            let temp_path = temp_download_path(local_path)?;
-            if let Err(error) =
-                download_to_path(storage, object.handle, object.size, &temp_path, options).await
-            {
-                let _ = fs::remove_file(&temp_path);
-                return Err(error);
-            }
-            if let Err(error) = rename_file(&temp_path, local_path) {
-                let _ = fs::remove_file(&temp_path);
-                return Err(error);
-            }
+            let temp = TempDownload::new(local_path)?;
+            download_to_path(storage, object.handle, object.size, temp.path(), options).await?;
+            rename_file(temp.path(), local_path)?;
             if let Err(error) = verify_file_size(local_path, object.size) {
                 let _ = fs::remove_file(local_path);
                 return Err(error);
@@ -288,7 +288,7 @@ fn prepare_file_destination(
         }
 
         if options.skip_existing {
-            return Ok(PullStatus::Skipped);
+            return Ok(PullStatus::SkippedExists);
         }
 
         if !options.overwrite {
@@ -360,6 +360,59 @@ fn temp_download_path(local_path: &Path) -> Result<PathBuf, AppError> {
     let temp_name = format!(".{}.tp7tmp", file_name.to_string_lossy());
 
     Ok(local_path.with_file_name(temp_name))
+}
+
+/// Owns the partial download and deletes it on drop, so a failed or
+/// interrupted transfer never leaves a `.tp7tmp` file next to the
+/// destination. A completed download renames the file away first, which
+/// turns the cleanup into a no-op.
+struct TempDownload {
+    path: PathBuf,
+}
+
+impl TempDownload {
+    fn new(local_path: &Path) -> Result<Self, AppError> {
+        Ok(Self {
+            path: temp_download_path(local_path)?,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDownload {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn exceeds_max_size(size: u64, max_size: Option<u64>) -> bool {
+    max_size.is_some_and(|max_size| size > max_size)
+}
+
+/// Parses a byte size written as plain bytes or with a `K`, `M`, or `G`
+/// suffix. Suffixes are case-insensitive powers of 1024, so `512M` is
+/// `536870912`.
+pub fn parse_size(input: &str) -> Result<u64, AppError> {
+    let text = input.trim();
+    let (digits, unit) = match text.as_bytes().last() {
+        Some(b'k' | b'K') => (&text[..text.len() - 1], 1024),
+        Some(b'm' | b'M') => (&text[..text.len() - 1], 1024 * 1024),
+        Some(b'g' | b'G') => (&text[..text.len() - 1], 1024 * 1024 * 1024),
+        _ => (text, 1),
+    };
+
+    digits
+        .parse::<u64>()
+        .ok()
+        .and_then(|value| value.checked_mul(unit))
+        .ok_or_else(|| AppError::InvalidArguments {
+            message: format!(
+                "{input} is not a valid size; use bytes or a K/M/G suffix, for example 512M"
+            ),
+        })
 }
 
 fn validate_options(options: PullOptions) -> Result<(), AppError> {
@@ -502,6 +555,7 @@ mod tests {
             recursive: false,
             overwrite: true,
             skip_existing: true,
+            max_size: None,
             dry_run: false,
             progress: false,
         })
@@ -511,13 +565,107 @@ mod tests {
     }
 
     #[test]
+    fn parses_plain_byte_sizes() {
+        assert_eq!(parse_size("0").unwrap(), 0);
+        assert_eq!(parse_size("1048576").unwrap(), 1_048_576);
+        assert_eq!(parse_size(" 42 ").unwrap(), 42);
+    }
+
+    #[test]
+    fn parses_binary_suffixes_in_either_case() {
+        assert_eq!(parse_size("1K").unwrap(), 1024);
+        assert_eq!(parse_size("1k").unwrap(), 1024);
+        assert_eq!(parse_size("512M").unwrap(), 512 * 1024 * 1024);
+        assert_eq!(parse_size("2g").unwrap(), 2 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn rejects_malformed_sizes() {
+        for input in [
+            "",
+            "M",
+            "-1",
+            "1.5M",
+            "10MB",
+            "10 M",
+            "1T",
+            "18446744073709551615K",
+        ] {
+            let error = parse_size(input).unwrap_err();
+
+            assert!(
+                matches!(error, AppError::InvalidArguments { .. }),
+                "expected {input} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn skips_only_files_above_the_size_cap() {
+        assert!(!exceeds_max_size(u64::MAX, None));
+        assert!(!exceeds_max_size(1024, Some(1024)));
+        assert!(exceeds_max_size(1025, Some(1024)));
+    }
+
+    #[test]
+    fn serializes_skip_reasons_distinctly() {
+        let report = PullReport {
+            remote_path: "/recordings".to_string(),
+            local_path: "recordings".to_string(),
+            dry_run: false,
+            max_size: Some(1024),
+            downloaded: 0,
+            skipped: 2,
+            total_bytes: 0,
+            files: vec![
+                file_report(
+                    "/recordings/a.wav",
+                    Path::new("recordings/a.wav"),
+                    16,
+                    PullStatus::SkippedExists,
+                ),
+                file_report(
+                    "/recordings/b.wav",
+                    Path::new("recordings/b.wav"),
+                    4096,
+                    PullStatus::SkippedTooLarge,
+                ),
+            ],
+        };
+
+        let json = serde_json::to_value(&report).unwrap();
+
+        assert_eq!(json["max_size"], 1024);
+        assert_eq!(json["files"][0]["status"], "skipped-exists");
+        assert_eq!(json["files"][1]["status"], "skipped-too-large");
+    }
+
+    #[test]
     fn detects_size_mismatch() {
         let path = Path::new("target/tp7-unit-size-mismatch.tmp");
-        fs::write(path, b"abc").unwrap();
+        let temp = TempDownload::new(path).unwrap();
+        let temp_path = temp.path().to_path_buf();
+        fs::write(&temp_path, b"abc").unwrap();
+        rename_file(&temp_path, path).unwrap();
 
         let error = verify_file_size(path, 4).unwrap_err();
         let _ = fs::remove_file(path);
+        drop(temp);
 
         assert!(matches!(error, AppError::TransferVerification { .. }));
+        assert!(!temp_path.exists());
+    }
+
+    #[test]
+    fn removes_the_temp_file_when_the_download_does_not_finish() {
+        let path = Path::new("target/tp7-unit-partial-download.tmp");
+        let temp = TempDownload::new(path).unwrap();
+        let temp_path = temp.path().to_path_buf();
+        create_file(&temp_path).unwrap();
+        assert!(temp_path.exists());
+
+        drop(temp);
+
+        assert!(!temp_path.exists());
     }
 }

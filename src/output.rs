@@ -394,7 +394,12 @@ pub fn write_pull(report: &PullReport, json: bool) -> Result<(), AppError> {
     }
 
     if report.dry_run {
-        let planned_bytes = report.files.iter().map(|file| file.size).sum();
+        let planned_bytes = report
+            .files
+            .iter()
+            .filter(|file| file.status == PullStatus::DryRun)
+            .map(|file| file.size)
+            .sum();
         println!(
             "{} downloaded, {} skipped, {} would download",
             report.downloaded,
@@ -643,7 +648,8 @@ fn pull_status_label(status: &PullStatus) -> &'static str {
     match status {
         PullStatus::Downloaded => "downloaded",
         PullStatus::DryRun => "would download",
-        PullStatus::Skipped => "skipped",
+        PullStatus::SkippedExists => "skipped (exists)",
+        PullStatus::SkippedTooLarge => "skipped (too large)",
     }
 }
 

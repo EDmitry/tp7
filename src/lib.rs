@@ -103,6 +103,7 @@ pub fn run() -> Result<(), AppError> {
                     recursive: args.recursive,
                     overwrite: args.overwrite,
                     skip_existing: args.skip_existing,
+                    max_size: args.max_size.as_deref().map(pull::parse_size).transpose()?,
                     dry_run: args.dry_run,
                     progress: !cli.no_progress && !cli.json && !args.dry_run,
                 },

@@ -164,6 +164,13 @@ pub struct PullArgs {
     #[arg(long, help = "Leave existing local files untouched")]
     pub skip_existing: bool,
 
+    #[arg(
+        long,
+        value_name = "SIZE",
+        help = "Skip remote files larger than SIZE (bytes, or a K/M/G suffix such as 512M)"
+    )]
+    pub max_size: Option<String>,
+
     #[arg(long, help = "Preview downloads without writing files")]
     pub dry_run: bool,
 }

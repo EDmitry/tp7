@@ -18,6 +18,7 @@ tp7 -a ls -sS --human-readable /memo
 tp7 -a stat /memo/2026-02-23_112713_000.wav
 tp7 -a pull /memo/2026-02-23_112713_000.wav ./recordings/
 tp7 -a pull /recordings ./recordings --recursive --skip-existing
+tp7 -a pull /recordings ./recordings --recursive --max-size 512M
 tp7 -a push ./clip.wav /memo/clip.wav --dry-run
 tp7 -a push ./clip.wav /memo/clip.wav --overwrite
 tp7 -a rm /memo/clip.wav --dry-run
@@ -81,6 +82,19 @@ tp7 -a pull /recordings/take.wav ./recordings --dry-run
 
 Human output shows readable sizes plus exact byte counts for `stat`, `pull`, and `push`. JSON output keeps numeric byte fields for scripts.
 
+`pull --max-size <SIZE>` skips remote files larger than `SIZE` instead of transferring them. `SIZE` is plain bytes or a case-insensitive `K`, `M`, or `G` suffix in powers of 1024, so `--max-size 512M` means 536870912 bytes. It applies to single-file and `--recursive` pulls, and to `--dry-run`.
+
+Skipped files stay visible. Human output prints one line per file, labelled `skipped (exists)` or `skipped (too large)`, and `--json` reports the same distinction as the per-file `status` values `skipped-exists` and `skipped-too-large`:
+
+```json
+{
+  "remote_path": "/recordings/take.wav",
+  "local_path": "recordings/take.wav",
+  "size": 734003200,
+  "status": "skipped-too-large"
+}
+```
+
 Downloads use temporary files and verify the final local size. Upload overwrite uses a staged remote replacement: the new file is uploaded under a temporary name before the existing object is renamed out of the way.
 
 ## Current TP-7 limitations
@@ -90,6 +104,8 @@ The TP-7 firmware tested here (`1.1.9`) accepts file upload, rename, delete, and
 - `mkdir` exists, but currently reports the TP-7 firmware rejection.
 - `push --recursive` uploads into an existing remote folder tree only.
 - Missing remote folders are detected before any recursive upload starts.
+
+Firmware `2.5.7` enumerates the audio/MIDI personality as USB product id `0x8019`; firmware `1.1.9` used `0x0019` for both personalities. MTP mode is `0x0019` on both, and `tp7` detects either id.
 
 This is a direct MTP CLI, not a Finder mount. A future FUSE mount is documented as a separate research track in `docs/spec.md`.
 
