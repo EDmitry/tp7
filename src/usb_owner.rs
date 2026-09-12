@@ -1,6 +1,5 @@
 use serde::Serialize;
 
-use crate::device::is_tp7_product;
 use crate::output::AppError;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -267,10 +266,10 @@ fn owner_belongs_to_tp7_device(entries: &[IoregEntry], index: usize) -> bool {
 
 fn is_tp7_device_entry(entry: &IoregEntry) -> bool {
     entry.node_class == "IOUSBHostDevice"
-        && matches!(
-            (entry.id_vendor, entry.id_product),
-            (Some(vendor), Some(product)) if is_tp7_product(vendor, product)
-        )
+        && entry.id_vendor == Some(crate::device::TP7_VENDOR_ID)
+        && entry
+            .id_product
+            .is_some_and(crate::device::is_tp7_product_id)
 }
 
 fn nearest_scope_entry(entries: &[IoregEntry], index: usize) -> usize {
@@ -405,24 +404,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_owners_for_the_audio_personality_product_id() {
-        let output = r#"
-+-o TP-7@01100000  <class IOUSBHostDevice, id 0x1000b6528, registered>
-  | {
-  |   "idVendor" = 9063
-  |   "idProduct" = 32793
-  |   "UsbExclusiveOwner" = "pid 1490, MIDIServer"
-  | }
-"#;
-
-        let owners = parse_ioreg_usb_owners(output);
-
-        assert_eq!(owners.len(), 1);
-        assert_eq!(owners[0].pid, Some(1490));
-        assert_eq!(owners[0].process, "MIDIServer");
-    }
-
-    #[test]
     fn parses_owner_without_pid() {
         let (pid, process) = parse_owner("unknown owner");
 
@@ -452,5 +433,22 @@ mod tests {
         assert_eq!(owners[0].process, "other process");
         assert_eq!(owners[0].raw, "pid 92001, other process");
         assert_eq!(owners[0].owner_node_name, "other process");
+    }
+    #[test]
+    fn parses_owners_for_the_audio_personality_product_id() {
+        let output = r#"
++-o TP-7@01100000  <class IOUSBHostDevice, id 0x1000b6528, registered>
+  | {
+  |   "idVendor" = 9063
+  |   "idProduct" = 32793
+  |   "UsbExclusiveOwner" = "pid 1490, MIDIServer"
+  | }
+"#;
+
+        let owners = parse_ioreg_usb_owners(output);
+
+        assert_eq!(owners.len(), 1);
+        assert_eq!(owners[0].pid, Some(1490));
+        assert_eq!(owners[0].process, "MIDIServer");
     }
 }

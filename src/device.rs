@@ -9,11 +9,11 @@ pub const TP7_VENDOR_ID: u16 = 0x2367;
 pub const TP7_PRODUCT_ID: u16 = 0x0019;
 /// Audio/MIDI personality on firmware `2.5.7`, which moved it off
 /// `TP7_PRODUCT_ID` and left that id for MTP mode only.
-pub const TP7_AUDIO_PRODUCT_ID: u16 = 0x8019;
+pub const TP7_AUDIO_MIDI_PRODUCT_ID: u16 = 0x8019;
 
-/// Reports whether a USB vendor/product pair is a TP-7 in either personality.
-pub fn is_tp7_product(vendor_id: u16, product_id: u16) -> bool {
-    vendor_id == TP7_VENDOR_ID && matches!(product_id, TP7_PRODUCT_ID | TP7_AUDIO_PRODUCT_ID)
+/// Reports whether a USB product id is a TP-7 in either personality.
+pub fn is_tp7_product_id(product_id: u16) -> bool {
+    matches!(product_id, TP7_PRODUCT_ID | TP7_AUDIO_MIDI_PRODUCT_ID)
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -81,7 +81,9 @@ pub fn list_tp7_devices() -> Result<Vec<Tp7Device>, AppError> {
         })?;
 
     Ok(devices
-        .filter(|device| is_tp7_product(device.vendor_id(), device.product_id()))
+        .filter(|device| {
+            device.vendor_id() == TP7_VENDOR_ID && is_tp7_product_id(device.product_id())
+        })
         .map(Tp7Device::from)
         .collect())
 }
@@ -361,17 +363,12 @@ mod tests {
     }
 
     #[test]
-    fn accepts_both_tp7_product_ids() {
-        assert!(is_tp7_product(TP7_VENDOR_ID, TP7_PRODUCT_ID));
-        assert!(is_tp7_product(TP7_VENDOR_ID, TP7_AUDIO_PRODUCT_ID));
-    }
-
-    #[test]
-    fn rejects_other_products_and_vendors() {
-        assert!(!is_tp7_product(TP7_VENDOR_ID, 0x0018));
-        assert!(!is_tp7_product(TP7_VENDOR_ID, 0x8018));
-        assert!(!is_tp7_product(0x1234, TP7_PRODUCT_ID));
-        assert!(!is_tp7_product(0x1234, TP7_AUDIO_PRODUCT_ID));
+    fn recognizes_known_product_ids() {
+        assert!(is_tp7_product_id(TP7_PRODUCT_ID));
+        assert!(is_tp7_product_id(TP7_AUDIO_MIDI_PRODUCT_ID));
+        assert!(!is_tp7_product_id(0x0018));
+        assert!(!is_tp7_product_id(0x8018));
+        assert!(!is_tp7_product_id(0x1234));
     }
 
     #[test]
