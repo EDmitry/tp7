@@ -28,7 +28,7 @@ sequenceDiagram
     participant TP7 as TP-7
     participant MTP as MTP session
 
-    CLI->>USB: Detect vendor 0x2367, product 0x0019
+    CLI->>USB: Detect vendor 0x2367, product 0x8019 or 0x0019
     USB-->>CLI: TP-7 in audio/MIDI mode
     CLI->>MIDI: Find TP-7 MIDI source and destination
     CLI->>TP7: Universal MIDI identity request
@@ -146,6 +146,10 @@ What each step taught us:
 - MTP support lives behind our own session layer. `ls`, `tree`, `stat`, and
   `pull`, `push`, `rename`, and `rm` now use that same switch/open/work/close
   flow.
+- The USB product id depends on firmware. On `1.1.9` both personalities used
+  `0x0019`. On `2.5.7` the audio/MIDI personality enumerates as `0x8019` and
+  only MTP mode uses `0x0019`, so device detection matches either id while the
+  MTP open path still looks for `0x0019`.
 - TP-7 firmware `1.1.9` accepted file upload, rename, and delete in smoke tests,
   but rejected folder creation with MTP `GeneralError`.
 - `push --overwrite` stages a replacement under a temporary remote name before

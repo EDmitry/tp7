@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::device::is_tp7_product;
 use crate::output::AppError;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -266,8 +267,10 @@ fn owner_belongs_to_tp7_device(entries: &[IoregEntry], index: usize) -> bool {
 
 fn is_tp7_device_entry(entry: &IoregEntry) -> bool {
     entry.node_class == "IOUSBHostDevice"
-        && entry.id_vendor == Some(crate::device::TP7_VENDOR_ID)
-        && entry.id_product == Some(crate::device::TP7_PRODUCT_ID)
+        && matches!(
+            (entry.id_vendor, entry.id_product),
+            (Some(vendor), Some(product)) if is_tp7_product(vendor, product)
+        )
 }
 
 fn nearest_scope_entry(entries: &[IoregEntry], index: usize) -> usize {
@@ -399,6 +402,24 @@ mod tests {
         assert_eq!(owners[2].interface_number, Some(1));
         assert_eq!(owners[3].scope, UsbOwnerScope::Device);
         assert!(is_conflicting_owner(&owners[3]));
+    }
+
+    #[test]
+    fn parses_owners_for_the_audio_personality_product_id() {
+        let output = r#"
++-o TP-7@01100000  <class IOUSBHostDevice, id 0x1000b6528, registered>
+  | {
+  |   "idVendor" = 9063
+  |   "idProduct" = 32793
+  |   "UsbExclusiveOwner" = "pid 1490, MIDIServer"
+  | }
+"#;
+
+        let owners = parse_ioreg_usb_owners(output);
+
+        assert_eq!(owners.len(), 1);
+        assert_eq!(owners[0].pid, Some(1490));
+        assert_eq!(owners[0].process, "MIDIServer");
     }
 
     #[test]

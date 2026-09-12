@@ -4,7 +4,17 @@ use serde::Serialize;
 use crate::output::AppError;
 
 pub const TP7_VENDOR_ID: u16 = 0x2367;
+/// MTP personality on every firmware seen so far, and also the audio/MIDI
+/// personality on firmware `1.1.9`.
 pub const TP7_PRODUCT_ID: u16 = 0x0019;
+/// Audio/MIDI personality on firmware `2.5.7`, which moved it off
+/// `TP7_PRODUCT_ID` and left that id for MTP mode only.
+pub const TP7_AUDIO_PRODUCT_ID: u16 = 0x8019;
+
+/// Reports whether a USB vendor/product pair is a TP-7 in either personality.
+pub fn is_tp7_product(vendor_id: u16, product_id: u16) -> bool {
+    vendor_id == TP7_VENDOR_ID && matches!(product_id, TP7_PRODUCT_ID | TP7_AUDIO_PRODUCT_ID)
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -71,9 +81,7 @@ pub fn list_tp7_devices() -> Result<Vec<Tp7Device>, AppError> {
         })?;
 
     Ok(devices
-        .filter(|device| {
-            device.vendor_id() == TP7_VENDOR_ID && device.product_id() == TP7_PRODUCT_ID
-        })
+        .filter(|device| is_tp7_product(device.vendor_id(), device.product_id()))
         .map(Tp7Device::from)
         .collect())
 }
@@ -350,6 +358,20 @@ mod tests {
             registry_entry_id: Some("0x00000001000b6528".to_string()),
             interfaces: vec![],
         }
+    }
+
+    #[test]
+    fn accepts_both_tp7_product_ids() {
+        assert!(is_tp7_product(TP7_VENDOR_ID, TP7_PRODUCT_ID));
+        assert!(is_tp7_product(TP7_VENDOR_ID, TP7_AUDIO_PRODUCT_ID));
+    }
+
+    #[test]
+    fn rejects_other_products_and_vendors() {
+        assert!(!is_tp7_product(TP7_VENDOR_ID, 0x0018));
+        assert!(!is_tp7_product(TP7_VENDOR_ID, 0x8018));
+        assert!(!is_tp7_product(0x1234, TP7_PRODUCT_ID));
+        assert!(!is_tp7_product(0x1234, TP7_AUDIO_PRODUCT_ID));
     }
 
     #[test]
