@@ -56,6 +56,11 @@ pub enum AppError {
     MtpNotVisible { serial: String, mode: String },
 
     #[error(
+        "TP-7 {serial} is switched off (USB shows its bootloader mass-storage personality); turn it on and retry, or hold STOP while powering on to boot straight into MTP mode"
+    )]
+    PoweredOff { serial: String },
+
+    #[error(
         "TP-7 {serial} is in {mode} mode; rerun with --auto-connect to switch into MTP mode for this command"
     )]
     AutoConnectRequired { serial: String, mode: String },
@@ -156,7 +161,9 @@ impl AppError {
             | AppError::LocalPathIsFolder { .. }
             | AppError::RemotePathExists { .. }
             | AppError::InvalidArguments { .. } => 2,
-            AppError::MtpNotVisible { .. } | AppError::AutoConnectRequired { .. } => 3,
+            AppError::MtpNotVisible { .. }
+            | AppError::PoweredOff { .. }
+            | AppError::AutoConnectRequired { .. } => 3,
             AppError::MtpExclusiveAccess { .. } => 4,
             AppError::Midi { .. }
             | AppError::MidiTimeout { .. }
@@ -689,4 +696,35 @@ fn print_usb_owner(owner: &UsbOwner) {
         "- {} pid {}: {} on {}",
         owner.kind, pid, owner.process, location
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn powered_off_error_explains_the_bootloader_personality() {
+        let error = AppError::PoweredOff {
+            serial: "F1RTL11C".to_string(),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "TP-7 F1RTL11C is switched off (USB shows its bootloader mass-storage personality); \
+             turn it on and retry, or hold STOP while powering on to boot straight into MTP mode"
+        );
+    }
+
+    #[test]
+    fn powered_off_shares_the_mtp_not_visible_exit_code() {
+        let powered_off = AppError::PoweredOff {
+            serial: "F1RTL11C".to_string(),
+        };
+        let not_visible = AppError::MtpNotVisible {
+            serial: "F1RTL11C".to_string(),
+            mode: "mass-storage".to_string(),
+        };
+
+        assert_eq!(powered_off.exit_code(), not_visible.exit_code());
+    }
 }

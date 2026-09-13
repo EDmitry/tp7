@@ -47,12 +47,39 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> AudioMidi: USB plug-in
+    [*] --> Bootloader: USB plug-in while switched off
+    [*] --> AudioMidi: USB plug-in while switched on
+    Bootloader --> AudioMidi: User turns the power on
+    Bootloader --> MTP: User holds STOP while powering on
     AudioMidi --> Switching: TE SysEx mode command
     Switching --> MTP: USB re-enumeration
     MTP --> AudioMidi: Session closes or device times out
     MTP --> MTP: File commands while session is open
 ```
+
+## Powered-Off / Bootloader Personality
+
+A TP-7 plugged in while its power switch is off still enumerates. It comes up
+as vendor `0x2367`, product `0x0019`, with a single bulk-only mass-storage
+interface and no MIDI. That is the te-boot bootloader/charger personality, not
+a TP-7 in a file-transfer mode.
+
+- The personality never changes on its own. There is no control request, SCSI
+  command, or re-enumeration trick that wakes it, and FieldKit ignores devices
+  in this state too.
+- Because there is no MIDI interface, the SysEx mode switch has nothing to talk
+  to. The CLI cannot switch a switched-off TP-7 into MTP.
+- The user turns the power on. That re-enumerates the device in audio/MIDI
+  mode, after which the normal SysEx switch works.
+- TE's documented shortcut: holding STOP while turning the power on boots
+  straight into MTP mode and skips the switch entirely.
+- Firmware-update mode (hold MODE while powering on) also appears as mass
+  storage, but with a disk. `tp7` cannot tell the two apart from USB
+  descriptors alone.
+- `tp7 doctor` reports this as a warning, and file commands fail with the
+  "switched off" error. Under `--auto-connect` the CLI first prints the hint
+  and waits up to 12 s for the device to reappear in audio/MIDI or MTP mode, so
+  flipping the switch when prompted lets the command continue.
 
 ## SysEx Shape
 
@@ -154,6 +181,9 @@ What each step taught us:
   `0x0019`. On `2.5.7` the audio/MIDI personality enumerates as `0x8019` and
   only MTP mode uses `0x0019`, so device detection matches either id while the
   MTP open path still looks for `0x0019`.
+- A switched-off TP-7 enumerates as `0x0019` with a single mass-storage
+  interface: the bootloader/charger personality. Only the power switch leaves
+  it, so file commands report it instead of attempting a switch.
 - TP-7 firmware `1.1.9` accepted file upload, rename, and delete in smoke tests,
   but rejected folder creation with MTP `GeneralError`.
 - `push --overwrite` stages a replacement under a temporary remote name before

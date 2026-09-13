@@ -32,6 +32,12 @@ Device identity:
 - Product ID: `0x0019` on firmware `1.1.9`, where both personalities share it.
   Firmware `2.5.7` enumerates the audio/MIDI personality as `0x8019` and keeps
   `0x0019` for MTP mode, so device detection accepts both ids.
+  A TP-7 plugged in while switched off enumerates as `0x0019` with a single
+  bulk-only mass-storage interface and no MIDI: the te-boot bootloader/charger
+  personality. Nothing the host can send leaves that state; the user turns the
+  power on, or holds STOP while powering on to boot straight into MTP mode.
+  Firmware-update mode (MODE held while powering on) also shows as mass
+  storage, but with a disk.
 - Serial: `F1RTL11C`
 - USB speed: high speed, 480 Mbps
 - USB version: 2.0

@@ -155,7 +155,7 @@ fn mode_check(device: &Tp7Device) -> DoctorCheck {
         UsbMode::MassStorage => DoctorCheck {
             status: CheckStatus::Warn,
             name: "visible-mtp-mode".to_string(),
-            message: "The TP-7 appears as mass storage, not MTP. This is unexpected for current TP-7 research.".to_string(),
+            message: "The TP-7 exposes mass storage, not MTP: it is switched off, so USB shows the bootloader/charger personality, or it was booted into firmware-update mode with MODE held. Turn it on for file commands, or hold STOP while powering on to boot straight into MTP mode.".to_string(),
         },
         UsbMode::Mixed => DoctorCheck {
             status: CheckStatus::Warn,

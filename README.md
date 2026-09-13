@@ -107,6 +107,8 @@ The TP-7 firmware tested here (`1.1.9`) accepts file upload, rename, delete, and
 
 Firmware `2.5.7` enumerates the audio/MIDI personality as USB product id `0x8019`; firmware `1.1.9` used `0x0019` for both personalities. MTP mode is `0x0019` on both, and `tp7` detects either id.
 
+A TP-7 plugged in while switched off still enumerates, as `0x0019` with a single mass-storage interface and no MIDI: that is the bootloader/charger personality, not a file-transfer mode. Nothing `tp7` can send wakes it, because the MIDI mode switch has no endpoint to talk to. Turn the TP-7 on and retry, or hold STOP while powering on to boot straight into MTP mode. With `--auto-connect`, `tp7` prints the hint and waits up to 12 s for the device to come back, so flipping the switch when prompted lets the command finish. Firmware-update mode (hold MODE while powering on) also appears as mass storage.
+
 This is a direct MTP CLI, not a Finder mount. A future FUSE mount is documented as a separate research track in `docs/spec.md`.
 
 ## Local requirements
