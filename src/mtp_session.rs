@@ -170,9 +170,7 @@ fn switch_tp7_to_mtp_with_retry(
     loop {
         match switch_tp7_to_mtp(device) {
             Ok(report) => return Ok(report),
-            Err(error)
-                if is_transient_midi_endpoint_absence(&error) && Instant::now() < deadline =>
-            {
+            Err(error) if is_transient_midi_error(&error) && Instant::now() < deadline => {
                 thread::sleep(Duration::from_millis(250));
             }
             Err(error) => return Err(error),
@@ -219,13 +217,18 @@ fn is_transient_device_absence(error: &AppError) -> bool {
     matches!(error, AppError::NoDevices | AppError::DeviceNotFound { .. })
 }
 
-fn is_transient_midi_endpoint_absence(error: &AppError) -> bool {
-    matches!(
-        error,
-        AppError::Midi { message }
-            if message.contains("CoreMIDI source endpoint")
+/// MIDI failures that clear up on their own shortly after the TP-7
+/// enumerates: CoreMIDI has not published its endpoints yet, or the device
+/// is not answering SysEx yet (seen right after power-on and after replug).
+fn is_transient_midi_error(error: &AppError) -> bool {
+    match error {
+        AppError::Midi { message } => {
+            message.contains("CoreMIDI source endpoint")
                 || message.contains("CoreMIDI destination endpoint")
-    )
+        }
+        AppError::MidiTimeout { .. } => true,
+        _ => false,
+    }
 }
 
 fn serial_for_error(device: &Tp7Device) -> String {
@@ -233,4 +236,27 @@ fn serial_for_error(device: &Tp7Device) -> String {
         .serial_number
         .clone()
         .unwrap_or_else(|| "<no-serial>".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retries_midi_failures_that_follow_enumeration() {
+        let no_source = AppError::Midi {
+            message: "No TP-7 CoreMIDI source endpoint was found.".to_string(),
+        };
+        let silent = AppError::MidiTimeout {
+            message: "waiting for MIDI identity response".to_string(),
+        };
+        let rejected = AppError::Midi {
+            message: "unexpected SysEx reply".to_string(),
+        };
+
+        assert!(is_transient_midi_error(&no_source));
+        assert!(is_transient_midi_error(&silent));
+        assert!(!is_transient_midi_error(&rejected));
+        assert!(!is_transient_midi_error(&AppError::NoDevices));
+    }
 }

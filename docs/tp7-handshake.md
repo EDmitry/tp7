@@ -146,6 +146,10 @@ What each step taught us:
 - MTP support lives behind our own session layer. `ls`, `tree`, `stat`, and
   `pull`, `push`, `rename`, and `rm` now use that same switch/open/work/close
   flow.
+- Right after the TP-7 enumerates (plug-in, power-on, or the flip back to
+  audio mode after an MTP session) CoreMIDI may not list its endpoints yet,
+  and the device may ignore the identity request for a few seconds. The CLI
+  retries both for up to 12 s before reporting a MIDI failure.
 - The USB product id depends on firmware. On `1.1.9` both personalities used
   `0x0019`. On `2.5.7` the audio/MIDI personality enumerates as `0x8019` and
   only MTP mode uses `0x0019`, so device detection matches either id while the
